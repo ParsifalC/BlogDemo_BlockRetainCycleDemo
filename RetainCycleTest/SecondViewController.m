@@ -8,6 +8,7 @@
 
 #import "SecondViewController.h"
 #import <ReactiveCocoa.h>
+#import "MyTextField.h"
 typedef NSString * (^MyBlock)(NSString *);
 
 //测试的类
@@ -28,6 +29,7 @@ typedef NSString * (^MyBlock)(NSString *);
 @interface SecondViewController ()
 
 @property (copy, nonatomic) MyBlock myBlock;
+@property (nonatomic, strong) MyTextField *textField;
 
 @end
 
@@ -91,6 +93,46 @@ typedef NSString * (^MyBlock)(NSString *);
      };
      */
     self.myBlock(@"3");
+    
+    /***RAC下的retain cycle****/
+/*
+ *总结，在RAC下订阅signal的时候，block里面引用到self，必须全部用weakSelf，引用到signal的订阅者，也必须用weakSubscriber。
+ */
+
+    MyTextField *myTextField = [[MyTextField alloc] initWithFrame:CGRectMake(50, 50, 100, 100)];
+    myTextField.placeholder = @"hhhhhhhh";
+    [self.view addSubview:myTextField];
+    
+    //4、这种情况下，也形成了retain cycle，而且RAC下面，在block里面引用self的话，也是会造成self的retain cycle，需使用weakObj
+    __weak typeof(myTextField) weakTextField = myTextField;
+    [myTextField.rac_textSignal subscribeNext:^(id x) {
+        NSLog(@"obj:%@ self:%@", weakTextField, weakSelf);
+    }];
+    
+    /*
+    [myTextField.rac_textSignal subscribeNext:^(id x) {
+        NSLog(@"obj:%@ self:%@", myTextField, weakSelf);//错误的写法，block的持有者myTextField形成retain cycle
+    }];
+    */
+    /*
+    [myTextField.rac_textSignal subscribeNext:^(id x) {
+        NSLog(@"obj:%@ self:%@", weakTextField, self);//错误的写法，self形成retain cycle，与普通的不太一样，可能与RAC内部的实现机制有关
+    }];
+    */
+    
+    //5、这种情况下，同3，形成retain cycle，要用weakSelf
+    @weakify(self);
+    [self.textField.rac_textSignal subscribeNext:^(id x) {
+        @strongify(self);
+        NSLog(@"%@", self);
+    }];
+    
+    /*
+    [self.textField.rac_textSignal subscribeNext:^(id x) {
+        NSLog(@"%@", self);//错误的写法，会造成self的retain cycle；
+    }];
+     */
+    [self.view addSubview:self.textField];
 }
 
 - (void)dealloc
@@ -98,6 +140,14 @@ typedef NSString * (^MyBlock)(NSString *);
     NSLog(@"%s",__FUNCTION__);
 }
 
+- (MyTextField *)textField
+{
+    if (!_textField) {
+        _textField = [[MyTextField alloc] initWithFrame:CGRectMake(50, 200, 100, 100)];
+    }
+    
+    return _textField;
+}
 
 #pragma mark - private method
 - (void)timerMethod
@@ -107,6 +157,7 @@ typedef NSString * (^MyBlock)(NSString *);
 
 - (void)tapView
 {
+    
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
